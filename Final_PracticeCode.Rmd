@@ -1,0 +1,273 @@
+---
+title: "Final_Bayesian"
+author: "Nashrah Ahmed"
+date: "May 8, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(flexmix)
+library(betareg)
+library(brms)
+library(pwt9)
+library(rstan)
+library(rstanarm)
+library(arm)
+library(AER)
+```
+
+```{r, cache = TRUE, results = "hide"}
+data("pwt9.0", package = "pwt9")
+dim(pwt9.0)
+```
+1(i)
+Because both variables reflect different ways of capturing overall wealth of the economy - one covers the production side while the other spending.By modeling both one captures a more holistic view of GDP...
+
+1(ii)
+The labsh variable in the data is the share of labour compensation in GDP at current national prices. From the Bayesian perspective, the more effective way to measure a variable is to utiilize probability to describe the degree of the belief (with quantified uncertainty) that a information being provided by the variable is true...
+
+1(iii)
+```{stan output.var = "1_CES", eval = FALSE}
+data {
+  int<lower=0> J; // of countries
+  int<lower=0> N; // of observations
+  int<lower=0> ID; // country ID
+  int<lower=0> rgdpe;
+  int<lower=0> rgdpo;
+  int<lower=0> labsh;
+  int<lower=0> L;//annual hours worked per capita
+  int<lower=0> K; // capital stock per capita
+  real y[J]; # estimate
+  real<lower=0>; sigma[J] #  standrd error 
+  real<lower=0> tau; //variance between countries
+}
+
+parameters {
+  real theta[J]; #country effect
+  real mu; #mean for countries
+// priors for variables
+  theta[pos] = normal_rng(0, rgdpe_scale[]);
+  pos += 1;
+  beta[pos] = normal_rng(0, rgdpo_scale[]);
+  pos += 1;
+  beta[pos] = normal_rng(0, labsh_scale[]);
+  pos += 1;
+  beta[pos] = normal_rng(0, L[]);
+  pos += 1;
+  beta[pos] = normal_rng(0, K[]);
+  pos += 1;
+}
+
+#revise this 
+functions {
+  vector Y(vector lambda, vector pi) {
+    Y[1] = A(sigma*L^-beta + (1-sigma)*K^-beta)^-1/beta*e^epsilon; 
+
+    return Y;
+  }
+
+}
+##revise this
+model {
+  target += beta_lpdf();
+}
+  return out;
+}
+```
+
+```{r, cache = TRUE, results = "hide"}
+pwt9.0 <- pwt9.0[pwt9.0$country %in% c("United States of America", "Japan", "Russian Federation", "Canada", "Germany", "Italy", "United Kingdom", "France") & pwt9.0$year > 1990, ]
+
+dat <- list(N = nrow(pwt9.0),
+            J = 8L,
+            ID = as.integer(pwt9.0$country),
+            rgdpe = pwt9.0$cgdpe,
+            rgdpo = pwt9.0$cgdpo,
+            labsh = pwt9.0$labsh,
+            L = pwt9.0$ avh,
+            K = pwt9.0$ck / (pwt9.0$pop * 10^6))
+
+expose_stan_functions("1_CES")
+PPD <- 1_CES()
+prop.table(table(c(PPD)))
+summary(rowMeans(PPD == 2))
+```
+
+2(i)
+```{r, cache = TRUE, results = "hide"}
+data("FoodExpenditure", package = "betareg")
+str(FoodExpenditure)
+summary(FoodExpenditure)
+FoodExpenditure$I <- FoodExpenditure$food/FoodExpenditure$income
+```
+
+```{r, cache = TRUE, results = "hide"}
+default_priors <- get_prior(I ~ income + persons,
+                            data = FoodExpenditure, family = cumulative)
+
+p_b <- set_prior("normal(0,2)", class = "b")
+p_intercept <- set_prior("normal(0,2)", class = "Intercept")
+p_sd <- set_prior("exponential(1)", class = "sd")
+
+#cant override priors in function?
+post <- stan_betareg(I ~ income + persons,
+            data = FoodExpenditure, link = "logit", link.phi = "log", 
+            prior = c(p_b, p_intercept, p_sd))
+round(coef(post), 2)
+
+#use prior_summary(post) to print informtion about priors used to fit the model
+```
+2(ii)
+
+2(iii)
+```{r, cache = TRUE, results = "hide"}
+PPD <- posterior_predict(post, draws =1000); dim(PPD)
+lower <- apply(PPD, MARGIN =2, quantile, probs =0.25)
+upper <- apply(PPD, MARGIN =2, quantile, probs =0.75)
+
+```
+3(i)
+```{r, cache = TRUE, results = "hide"}
+#A sample of how this could be calculated in stan:
+df <- roaches; df$treatment <-0
+Y_0 <- posterior_predict(post, newdata = df, offset = log(df$exposure2))
+df$treatment <-1
+Y_1 <- posterior_predict(post, newdata = df, offset = log(df$exposure2))
+par(mar = c(4,4,0,0)+.2, las =1)
+plot(density(Y_1 - Y_0, from =-100, to =100), main ="")
+```
+3(ii)
+Based on the graphs it seems as the fixed rollout costs outweigh the diminishing benefits of the treatment and the probability of loss is higher as the effect sizes fall but increase again as they get too big...
+
+5(i)
+```{r, cache = TRUE, results = "hide"}
+#design matrix
+data("CigarettesSW", package = "AER")
+CigarettesSW <- CigarettesSW[CigareetesSW$year == "1995", ]
+CigarettesSW$rprice <- with(CigarettesSW, price/cpi)
+CigarettesSW$rincome <- with(CigarettesSW, income/population/cpi)
+CigarettesSW$tdiff <- with(CigarettesSW, (taxs - tax)/cpi)
+
+X1 <- model.matrix(log(rprice) ~ log(rincome) + tdiff + I(tax / cpi),
+                   data = CigarettesSW)
+X2 <- model.matrix(log(packs) ~ log(rincome), data = CigarettesSW)
+
+```
+
+```{stan output.var = "attempt", eval = FALSE}
+#attempted this but not enough time to complete
+functions {
+  real beta_ccdf(real x, real a, real b) {
+    return beta_cdf(1 - x, b, a);
+  }
+  
+  // E[X | X > x] for X target += beta(a,b)
+  real beta_conditional_mean(real x, real a, real b) {
+    return beta_ccdf(x, a+1, b) / beta_ccdf(x, a, b) * a / (a+b);
+  }
+}
+
+data {
+  int<lower=1> N; // number of observations
+  int<lower=1> R; // number of suspect races
+  int<lower=1> D; // number of counties
+}
+
+parameters {	
+  // hyperparameters
+  vector<lower=0>[R] sigma_t;
+  real mu_phi_d;
+  real<lower=0> sigma_phi_d;
+  real mu_lambda_d;
+  real<lower=0> sigma_lambda_d;
+
+transformed parameters {
+  vector[D] phi_d;
+  vector[D] lambda_d;
+  vector[N] phi;
+  vector[N] lambda;
+  vector<lower=0, upper=1>[N] search_rate;
+  vector<lower=0, upper=1>[N] hit_rate;
+  vector<lower=0, upper=1>[N] t_i;
+  
+  phi_d    = mu_phi_d + phi_d_raw * sigma_phi_d;
+  lambda_d = mu_lambda_d + lambda_d_raw * sigma_lambda_d;
+  
+  for (i in 1:N) {	
+    real a;
+    real b;
+    
+    // implies t_i[i] target += logit-normal_lpdf(t_r[r[i]], sigma_t[r[i]])
+    t_i[i] = inv_logit(t_r[r[i]] + t_i_raw[i] * sigma_t[r[i]]);
+    
+    // signal distribution parameters	
+    phi[i]    = inv_logit(phi_r[r[i]] + phi_d[d[i]]);
+    lambda[i] = exp(lambda_r[r[i]] + lambda_d[d[i]]);
+    
+    // transformed signal distribution parameters
+    a = lambda[i] * phi[i];
+    b = lambda[i] * (1 - phi[i]);
+    
+    // implied search and hit rates
+    search_rate[i] = beta_ccdf(t_i[i], a, b);
+    hit_rate[i]    = beta_conditional_mean(t_i[i], a, b);
+  }
+}
+
+model {  
+  // Draw threshold hyperparameters
+  target += normal_lpdf(sigma_t | 0, 2);
+  target += normal_lpdf(t_r | 0, 2);
+
+```
+6(i)
+```{r}
+ROOT <- "https://raw.githubusercontent.com/rmcelreath/rethinking/master/data/"
+fish <- read.csv(paste0(ROOT, "Fish.csv"), sep = ";")[,1:5]
+colnames(fish)[1] <- "count"
+str(fish)
+```
+6(i)
+```{r, cache = TRUE, results = "hide"}
+default_priors <- get_prior(count ~ livebait + camper + child + (1 | persons),
+                            data = fish, family = cumulative)
+
+p_b <- set_prior("normal(0,2)", class = "b")
+p_intercept <- set_prior("normal(0,2)", class = "Intercept")
+p_sd <- set_prior("exponential(1)", class = "sd")
+
+
+post1 <- brm(count ~ livebait + camper + child + (1 | persons),
+            data = fish, family = poisson(link = "log"), 
+            prior = c(p_b, p_intercept, p_sd))
+post1
+```
+6(ii)
+```{r, cache = TRUE, results = "hide"}
+plot(marginal_effects(post1, effects = "livebait", ordinal = TRUE))
+```
+6(iii)
+```{r, cache = TRUE, results = "hide"}
+post2 <- brm(count ~ livebait + camper + child + (1 | persons),
+            data = fish, family = zero_inflated_poisson(link = "log"), 
+            prior = c(p_b, p_intercept, p_sd))
+
+```
+6(iv)
+According to some literature, overdispersion generally occurs whent the variance increases more rapidly than the mean (the poisson distribution has a scaling parameter of 1). This tends to be an issue particular for count data which may lead to distorted results. The negative binomial model,a two-stage hierarchical process in which the response is modeled against a Poisson distribution whose expected count is modeled by a gamma distribution can potentially address these concerns. However, the relatively high dispersion can also be due to a high number of zero's than otherwise suitable or expected for a Poisson distribution. Essentially, the zero-inflated models combine a binary logistic regression model with a Poisson regression which allows better parsing of the underlying data. 
+
+7(i)
+$$ Odds(A) = \frac{PR(A)}{1-PR(A)} $$
+
+7(ii)
+Market implied probabilities (MIPs) are considerably Bayesian becuase they presuably represent risk-neutral probabilities derived from market instruments for which prices should theoretically reflect all past and current information. MIPs should update simultaneously with new information which aligns with Bayesian principles. 
+
+7(iii)
+plug into equations below?
+$$ mode = M = \frac{a-1}{a+b-2} $$
+
+$$ median = m = \frac{a-\frac{1}{3}}{a+b-\frac{2}{3}} $$
+
+$$ a = \frac{m(4M-3)+M}{3(M-m)} $$
+$$ b = \frac{m(1-4M)+5M-2}{3(M-m)} $$

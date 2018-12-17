@@ -1,0 +1,189 @@
+---
+title: "Bayesian_3"
+author: "Nashrah Ahmed"
+date: "February 27, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE, results = "hide")
+library(rstanarm);options(mc.cores = parallel::detectCores())
+library(rstan)
+library(readr)
+library(ggplot2)
+
+```
+
+## Write a Stan function that draws once from the prior predictive distribution of wages / salary (WAGP)
+under a generative model that is linear in its parameters, although you can apply any transformation to any
+variable, include any interaction or polynomial, etc. Your function may have to input several vectors as
+exogenous knowns from the columns of dataset and should return a vector of the same size. You can use
+any distributions that you want for the priors and conditional distribution of the outcome.
+```{r, eval=FALSE}
+functions {
+  vector n_rng(int N, vector AGEP, vector SEX, vector MAR, vector DREM, vector WKHP) {
+    vector[N] out;
+
+    for(i in 1:N) {
+      real beta_0 = normal_rng(43,14);
+      real beta_1 = normal_rng(.5,.5);
+      real beta_2 = normal_rng(.5,.5);
+      real beta_3 = normal_rng(0.02,.14);
+      real beta_4 = normal_rng(38,13);
+
+      out[i] = beta_0 * AGEP[i]^2 + beta_1 * SEX[i] + beta_2 * MAR[i] + beta_3 * DREM[i] + beta_4 * WKHP[i];
+    }
+    
+    return out;
+ }
+}
+
+```
+
+```{r}
+setwd("/Users/Nashrah/Desktop/Columbia_QMSS/Spring 2018 Courses/Bayesian Stats")
+dataset <-readRDS("dataset.rds")
+
+dataset$SEX <- ifelse(dataset$SEX==1, 1, 0) #1 = male
+dataset$MAR <- ifelse(dataset$MAR==1, 1, 0) #1 = married
+dataset$DREM <- ifelse(dataset$DREM==1, 1, 0) #1 = yes for cognitive difficulty
+dataset$ESR <- ifelse(dataset$ESR==1, 1, 0) #1 = yes for employment status
+
+expose_stan_functions("n_rng.stan")
+
+test <- n_rng(N = nrow(dataset), AGE = dataset$AGEP, SEX = dataset$SEX, MAR = dataset$MAR, DREM = dataset$DREM, WKHP = dataset$WKHP)
+hist()
+test <- n_rng(N = nrow(dataset), AGE = dataset$AGEP, SEX = dataset$SEX, MAR = dataset$MAR, DREM = dataset$DREM, WKHP = dataset$WKHP)
+hist()
+test <- n_rng(N = nrow(dataset), AGE = dataset$AGEP, SEX = dataset$SEX, MAR = dataset$MAR, DREM = dataset$DREM, WKHP = dataset$WKHP)
+hist()
+
+# wage/salary (WAGP) = y
+# control for age, sex, married, cognitive difficulty, wkhp: usual hours worked per week past 12 months, 
+# stan-lm posterior distribution 
+# median wage problem sex difference
+
+```
+
+## R^2
+```{r}
+post <-  stan_lm(log(wgap)~ AGE^2 + SEX + MAR + DREM + WKHP, data = dataset,
+                 prior = R2(location = , what ="median"))
+
+#predcit R^2 to be about .8 
+
+str(as.data.frame(post))
+
+summary(post)
+
+PPD_0 <- rstanarm::posterior_predict(post, draws =1)
+df <- diamonds[diamonds$z >0,]; df$carat <- df$carat +1
+PPD_1 <- rstanarm::posterior_predict(post, newdata = df, draws =1)
+plot( density((exp(PPD_1) - exp(PPD_0)) / 1000, from = 0, to = 1), main = "", las = 1)
+
+```
+
+## median wage
+```{r}
+#wage/salary among those that are employed
+#dummy variable ESR defined above; 1 = employed & all else 0
+
+post <-  stan_lm(log(wgap)~ AGE^2 + SEX + MAR + DREM + WKHP, data = dataset,
+                 subset = ESR > 0,          
+                 prior = R2(location = , what ="median"))
+
+str(as.data.frame(post))
+
+summary(post)
+
+PPD_0 <- rstanarm::posterior_predict(post, draws = 1)
+df2 <- dataset[dataset$ESR > 0, ]
+PPD_1 <- rstanarm::posterior_predict(post, newdata = df2, draws = 1)
+
+```
+
+```{r}
+#wage/salary among for men
+#dummy variable SEX defined above; 1 = men & all else 0
+
+post1 <-  stan_lm(log(wgap)~ AGE^2 + SEX + MAR + DREM + WKHP, data = dataset,
+                 subset = SEX > 0,          
+                 prior = R2(location = , what ="median"))
+
+str(as.data.frame(post1))
+
+summary(post1)
+
+PPD_1 <- rstanarm::posterior_predict(post1, draws = 1)
+df3 <- dataset[dataset$SEX > 0, ]
+PPD_2 <- rstanarm::posterior_predict(post1, newdata = df3, draws = 1)
+
+#image/salary among for women
+
+post2 <-  stan_lm(log(wgap)~ AGE^2 + SEX + MAR + DREM + WKHP, data = dataset,
+                 subset = SEX == 0,          
+                 prior = R2(location = , what ="median"))
+
+str(as.data.frame(post2))
+
+summary(post2)
+
+PPD_2 <- rstanarm::posterior_predict(post2, draws = 1)
+df4 <- dataset[dataset$SEX == 0, ]
+PPD_3 <- rstanarm::posterior_predict(post2, newdata = df4, draws = 1)
+```
+
+## Twitter
+```{r}
+
+tweets <- read_csv("tweets.csv")
+tweets$created_at <- NULL
+tweets$retweeted <- NULL
+tweets$posted <- NULL
+tweets <- tweets[!is.na(tweets$retweet_count), ]
+users <- read_csv("users.csv")
+colnames(users)[1] <- "user_id"
+russia <- merge(tweets, users, by = "user_id")
+
+# russia$Clinton <- grepl("Clinton", russia$text, ignore.case = TRUE)
+
+```
+## logistic regression
+```{r}
+#predict retweet:
+#followers_count
+#favourites_count
+#friends_count
+
+russia$retweet_count <- ifelse(russia$retweet_count > 0, 1, 0)
+russia$lang <- ifelse(russia$lang == "en", 1, 0)
+
+ggplot(russia, aes(x = favourites_count, y = ..density.., fill = retweet_count > 0)) +
+  geom_histogram() + 
+  scale_fill_manual(values = c("gray30", "skyblue"))
+
+ggplot(russia, aes(x = friends_count, y = ..density.., fill = retweet_count > 0)) +
+  geom_histogram() + 
+  scale_fill_manual(values = c("gray30", "skyblue"))
+
+ggplot(russia, aes(x = followers_count, y = ..density.., fill = retweet_count > 0)) +
+  geom_histogram() + 
+  scale_fill_manual(values = c("gray30", "skyblue"))
+
+#Based on the distributions above, the trues are mainly rightly skewed which makes intuitive sense given the variables. 
+
+vars <- c("retweet_count", "favourites_count","followers_count","lang")
+r.sub <- russia[, vars]
+sub <- na.omit(r.sub)
+
+fit1 <- stan_glm(retweet_count ~ followers_count + favourites_count + lang, data = sub, 
+                 family = binomial(link = "logit"), QR =TRUE, na.action = "na.omit")
+
+##tried several things, includining removing NAs but stil results in 0 output
+
+summary(fit1)
+round(posterior_interval(fit1, prob = 0.5), 2)
+
+#Overdispersion is when the disperson in the underlying data is greater than that predicted by the model but I am uncertain how to interpret the resutls precisely.
+
+```

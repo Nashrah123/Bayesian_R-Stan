@@ -1,0 +1,93 @@
+---
+title: "BayesianHW"
+author: "Nashrah Ahmed"
+date: "April 11, 2018"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE)
+if (!require("brms")) install.packages("brms")
+library(brms)
+library(arm)
+library(rstan)
+library(rstanarm)
+rstan_options(auto_write = TRUE)
+set.seed(12345)
+```
+#2016 Election
+As shown in the appendix, the paper estimated models of the form Trump ~ 1 + female + state_pres_vote + ..., which is to say that the probability that the people in the particular poll (intend to) vote for Trump is a function of the proportion of people from that state in all polls who (intend to) vote for Trump. What do you think about the inclusion of state_pres_vote as a predictor?
+
+The value add of including the state_pres_vote as a predictor is a bit ambiguous because it is an assumption-based or "supposed" type indicator and may lack a level of accuracy by construction. Particularly, not having precise information about the proportion of supporters in a particular state makes the relationship with Y less reliable. 
+
+Another controversial issue is whether to condition on party identification (the paper does not). Some say whether a person is registered to vote as a Democrat, a Republican, an Independent, etc. is perhaps the strongest predictor of whether the person prefers the Democratic vs. Republican candidate in an election. Others say that party identification should be endogenous to a model since it is easy for voters to officially or unofficially change their party identification during the campaign as a result of the positions that the candidates take. What do you think?
+
+The inclusion of part identification seems to be frequently considered when predicting election outcomes, however there are caveats associated with assigning too much relevance to the indicator. It largely depends on the core question the researcher is attempting to address - one could potentially benefit from multiplying the indictor by likelhood of switching based on any past flunctuations. 
+
+```{r, warning=FALSE}
+expose_stan_functions("h_model.stan")
+
+```
+
+#Marriage Equality
+```{r, eval=FALSE}
+setwd("/Users/Nashrah/Desktop/Columbia_QMSS/Spring 2018 Courses/Bayesian Stats")
+pd = read.csv("GSS_subset.csv")
+pd$YEAR <-as.factor(pd$YEAR)
+with(pd,table(MARHOMO, YEAR))
+
+#MARHOMO: "Do you agree or disagree [that] homosexual couples should have theright to marry one another?" 
+
+#ABPOOR: Please tell me whether or not you think it should be possible for a pregnant woman to obtain a legal abortion if... D. If the family has a very low income and cannot afford any more children?
+
+#COLATH_1: There are always some people whose ideas are considered bad or dangerous by other people. For instance, somebody who is against all churches and religion . . . B. Should such a person be allowed to teach in a college or university, or not?
+
+#COLHOMO_1: And what about a man who admits that he is a homosexual? b.Should such a person be allowed to teach in a college, or university, or not?
+## 4: ALLOWED & 5 NOT ALLOWED
+
+#EDU: level of education 
+
+#FUND: Fundamentalism/liberalism of respondent's religion
+
+vars <- c("MARHOMO","FUND","COLATH","COLHOMO","EDUC","AGE","YEAR")
+pd.sub <- pd[, vars]
+sub <- na.omit(pd.sub)
+
+sub$mar <- as.numeric(factor(sub$MARHOMO, levels=c("STRONGLY DISAGREE", "STRONGLY AGREE", "AGREE", "NEITHER AGREE NOR DISAGREE", "DISAGREE")))
+
+sub$fund <- as.numeric(factor(sub$FUND, levels=c("MODERATE", "FUNDAMENTALIST", "LIBERAL")))
+
+sub$col <- as.numeric(factor(sub$COLATH, levels=c("ALLOWED", "NOT ALLOWED", "IAP")))
+
+sub$colh <- as.numeric(factor(sub$COLHOMO, levels=c("ALLOWED", "NOT ALLOWED", "IAP")))
+
+sub$age <- ifelse(sub$AGE=="89 OR OLDER",89,sub$AGE)
+
+p_b <- set_prior("normal(0,2)", class = "b")
+
+fit2 <- brm(mar ~ age + fund + col + colh + (1|YEAR), data = sub, family = cumulative, prior = p_b)
+fit2
+
+```
+![Loo:results.](/Users/Nashrah/Desktop/Columbia_QMSS/Spring 2018 Courses/Bayesian Stats/image/HW5.png)
+
+```{r, eval=FALSE}
+fit <- brm(mar ~ age + EDUC + fund + col + colh + (1|YEAR), data = sub, family = cumulative, prior = p_b)
+fit
+
+```
+![Model2:Results.](/Users/Nashrah/Desktop/Columbia_QMSS/Spring 2018 Courses/Bayesian Stats/image/HW53.png)
+
+```{r, eval=FALSE}
+LOO(fit, fit2)
+
+```
+![Loo:results.](/Users/Nashrah/Desktop/Columbia_QMSS/Spring 2018 Courses/Bayesian Stats/image/HW5L.png)
+
+#National Children's Study (NCS)
+If the NCS data were actually collected according to one or more of the sampling designs discussed in the essay (and some of the pilot data are available at https://ncsarchive.s-3.net/bioshare/teaching_datasets/), they would be analyzed largely using mixed effects models. In the context of the NCS, explain the differences between the frequentist view of such models, the Bayesian view of such models, and the view of people estimating such models
+
+At a high level, from a frequentist's point of view, determining between fixed and random effects in an integral part of the process. For example, the beta coefficient and standard deviation are considered are considered fixed variables in clustering examples, while u or b for a sample are assigned as random variables because they fluctuate based on the characteristics of the sample. Referencing the article, the experiment could be considered a clustering design in which counties were initially grouped and chosen randomly followed by a random selection of women within those counties who would undergo the questioning. From a Bayesian perspective - because they should have priors and posterior beliefs about all unknowns which can be described with some type of distributions, a Bayesian relative to a frequentist is likely never to refer to any type of fixed or random/mixed effects. The potential view of the people estimating such models is difficult to fully understand because the original design was considered unsuccesful and rejiggered to include more randomization, this time of the hospitals, followed by the women who would potentially participate in the project. This would still seem to reconcile more with a frequentist than a Bayesian.
+

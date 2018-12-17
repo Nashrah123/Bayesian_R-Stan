@@ -1,0 +1,112 @@
+---
+title: "HW4_Bayesian"
+author: "Nashrah Ahmed"
+date: "March 26, 2018"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE, results = "hide")
+library(rstanarm);options(mc.cores = parallel::detectCores())
+library(rstan)
+library(readr)
+library(ggplot2)
+library(projpred)
+library(loo)
+library(matrixStats)
+library(bridgesampling)
+
+```
+
+##Conditional Logit
+```{r}
+hsbcl <- foreign::read.dta("https://stats.idre.ucla.edu/stat/stata/webbooks/logistic/hsbcl.dta")
+colnames(hsbcl)
+
+#call stan model
+rstan::expose_stan_functions("hsbcl_rng.stan")
+X <- model.matrix(honcomp ~ race + ses + read + write + math + science + socst - 1,
+                  data = hsbcl)
+X <- X[,-1]
+PPD <- hsbcl_rng(1000, X)
+prop.table(table(c(PPD)))
+summary(rowMeans(PPD == 2))
+
+
+hsbcl$race1 <- ifelse(hsbcl$race=="white", 1, 0) #1=white
+hsbcl$ses1 <- ifelse(hsbcl$ses=="high", 1, 0) #1=high
+hsbcl$female1 <- ifelse(hsbcl$female==1, 1, 0) #1=female
+
+post1 <- stan_clogit(honcomp ~ race1 + ses1 + read + math + write + science + socst, 
+                     data = hsbcl, strata = pid, QR = TRUE, diagnostic_file = file.path(getwd(), "logit.csv"))
+
+post1
+```
+
+What evidence is there that your model fits well without overfitting? In what respects is your model not doing so well? Note that some of the some of the graphs you might construct for a regular logit model could need adjustments to account for the fact that being Y = 1 is mutually exclusive within a pair.
+```{r}
+
+```
+
+Estimate a clogit model with a somewhat different X. Which of the two models is expected to predict future (paired) data best and is the difference in expected predictive performance considerable or minor?
+```{r}
+#removed race and socioeconomic status 
+post2 <- stan_clogit(honcomp ~ read + math + write + science + socst, 
+                     data = hsbcl, strata = pid, QR = TRUE, diagnostic_file = file.path(getwd(), "logit.csv"))
+
+post2
+```
+
+Use the (recently renamed) loo_model_weights function in the loo package to estimate the relative weights that you should use for prediction when stacking your two models together.
+```{r}
+#loo_model_weights no longer function 
+#not exactly sure how to interpret
+l1 <- loo(log_lik(post1))
+l2 <- loo(log_lik(post2))
+l_comparison <- compare(l1, l2)
+l_comparison
+
+```
+
+Finally, use the stan_glm function in the rstanarm package to estimate a logit model that ignores the pair structure of the data, again specifying the diagnostic_file argument to be something like file.path ( getwd (), "logit.csv" ). Use the post_prob function in the bridgesampling package to estimate the posterior probability that the original clogit model is right and the logit model is wrong, given that one of the two is right.
+```{r, eval=FALSE}
+h_logit <- stan_glm(honcomp ~ race1 + ses1 + read + math + write + science + socst, data = hsbcl, QR = TRUE, diagnostic_file = file.path(getwd(), "logit.csv"), family = binomial(link = "logit"))
+
+h_logit
+b1 <- bridge_sampler(post1)
+b2 <- bridge_sampler(h_logit)
+post3 <- post_prob(b1, b2)
+post3
+```
+
+##Linear Model: Crime Dataset
+```{r}
+ROOT <- "https://archive.ics.uci.edu/ml/machine-learning-databases/"
+crime <- read.csv(paste0(ROOT, "communities/communities.data"),
+                  header = FALSE, na.strings = "?")
+colnames(crime) <- read.table(paste0(ROOT, "communities/communities.names"),
+                              skip = 75, nrows = ncol(crime))[,2]
+
+#Use the stan_lm function in the rstanarm package to construct a linear (in its parameters) model of ViolentCrimesPerPop using many but not all of the available predictors plus any polynomials or interactions that you think are necessary.
+post1 <-  lm(ViolentCrimesPerPop ~ racePctHisp + PctSpeakEnglOnly + racepctblack + PctPopUnderPov + racePctWhite + NumInShelters + NumUnderPov + NumKindsDrugsSeiz + PctIlleg + medIncome + population, data = crime)
+summary(post1)
+
+post <-  stan_lm(ViolentCrimesPerPop ~ racePctHisp + PctSpeakEnglOnly + racepctblack + PctPopUnderPov + racePctWhite + NumInShelters + NumUnderPov + NumKindsDrugsSeiz + PctIlleg + medIncome + population, data = crime, prior = R2(0.5, what = "mode"))
+summary(post)
+
+PPD <- posterior_predict(post)
+m <- apply(PPD, MARGIN = 1, FUN = median)
+summary(m)
+
+#choosing 5 predictors
+fit_v <- varsel(post); round(varsel_stats(fit_v), digits =2)
+projs <- project(fit_v, nv =5); alpha <- projs$alpha 
+beta <- t(projs$beta); colnames(beta) <- names(projs$vind); summary(beta)
+
+```
+
+##Change-of-Variables
+
+![proof.](/Users/Nashrah/Desktop/Columbia_QMSS/Spring 2018 Courses/Bayesian Stats/HW4.png)

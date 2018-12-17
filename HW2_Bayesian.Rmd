@@ -1,0 +1,159 @@
+---
+title: "GR5065 Assignment 1"
+author: "Nashrah Ahmed - na2729"
+date: "2/8/18"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(12390)
+
+library(readr)
+library(rstan)
+
+```
+## Question 1
+### Part 1.1
+
+$$ \phi_r = \text{exogenous and unknown}\\ $$
+
+$$ \lambda_r = \text{exogenous and unknown}\\ $$
+
+$$ \mu_tr = \text{exogenous and unknown}\\ $$
+
+$$ \sigma_tr = \text{exogenous and unknown}\\ $$
+
+$$ \sigma_\phi = \text{exogenous and unknown}\\ $$
+
+$$ \mu_\phi = \text{exogenous and unknown}\\ $$
+
+$$ \mu_\lambda = \text{exogenous and unknown}\\ $$
+
+$$ \sigma_\lambda = \text{exogenous and unknown}\\ $$
+
+$$ \phi_d = \text{exogenous and unknown}\\ $$
+
+$$ \lambda_d = \text{exogenous and unknown}\\ $$
+
+$$ t_(r_d) = \text{endogenous and unknown}\\ $$
+
+$$ H_(r_d) = \text{endogenous and known}\\ $$
+
+$$ S_(r_d) = \text{endogenous and known}\\ $$
+
+### Part 1.2
+I am not certain my understanding of this question is correct, but one can potentially compute the theshold for scrutiny for punishment per stop amognst the departments based on the posterior distribution of the unknowns given the knowns.
+
+### Part 1.3
+We could assume the officers divided concepts into exogenous/endogenous & known/unknowable given how the variables were selected and associated.The authors map out the dependencies within the parameters and use Bayes Rule to obtain the posterior distribution of the unknowables given the known data. They also then draw from the posterior predictive distribution and compare to the empirical distribution. 
+
+### Part 1.4
+```{r}
+## really struggled with this one and hoping for your feedback on the logic for how to work through the problem
+# define function to generate random sample for n_ring
+
+#r_mu_tr = n_ring(0,2)
+#r_sigma_tr = fabs(n_ring(0,2))
+#r_sigma_phi = fabs(n_ring(0, 2))
+#r_mu_phi = n_ring(0, 2)
+#r_mu_lambda = n_ring(0, 2)
+#r_sigma_lambda = fabs(n_ring(0, 2))
+#r_phi_r = n_ring(0, 2)
+#r_lambda_r = n_ring(0, 2)
+
+#NC <-read_delim("north_carolina.tsv.gz", delim = "\t")
+#stops <-with(NC,by(stop_date,list(police_department, race), FUN = NROW))
+#class(stops) <- "array"
+#attr(stops, "call") <-NULL
+#stops <- stops[order(rowSums(stops), decreasing = TRUE), ]
+#head(stops)
+
+```
+### Part 1.5
+```{r}
+
+#expose_stan_functions("police_rng.stan")
+#stops_list <-lapply(1:nrow(stops), FUN =function(d)return(stops[d, ]))
+#test <-police_rng(D =nrow(stops), R =ncol(stops), stops = stops_list)
+# now you can convert back to an integer array if you want
+#test <-array(unlist(test), dim =c(nrow(stops), 2,ncol(stops)),dimnames =list(rownames(stops),c("Searches", "Hits"),colnames(stops)))
+#test <-aperm(test,c(1,3,2))
+#test[1,,]
+```
+### Part 1.6
+As stated in the paper, they begin with baseline and outcome analyses which show that the search rate for black drivers of 5.4% is higher than those for Whites, Hispanics, and Asians. Based on this method the NC police could be considered relatively racist amongst the various ethnicities though the results are more ambiguous or not as stark as those from the threshold test (which show consistant discrimination amongst Blacks and Hispanics).
+
+### Part 1.7
+
+## Question 2
+### Part 2.1
+
+$$ L(\pi : N, x) = \prod_{i=1}^N \frac{-\pi^{x_i}}{x_i \ln {1-\pi}} $$
+
+### Part 2.2
+```{r}
+#M <- .45
+#m <- .46
+#a <- (m*(4*M???3)+M)/(3*(M???m))
+#a
+#b = (m*(1???4*M)+5*M???2)/(3*(M???m))
+#b
+
+a <- 3.4
+b <- 3.93
+# had to commetn out becuase it would not let me knit, please see values below
+```
+value for a = 3.4
+value for b = 3.93
+
+### Part 2.3
+```{r}
+
+z <- rbeta(10000, shape1 = a, shape2 = b)
+
+X <- sample(z, size = 20, replace = TRUE)
+x <- data.frame(X)
+x
+
+```
+### Part 2.4
+```{r}
+# Now pretend that this vector called x is wild data. Write an R function whose first argument is pi and whose second argument is this x and returns the posterior kernel of ??| x. See the lecture slides for various examples of defining and using an R function.
+
+kernel <-function(pi, data) {
+  log_p <- dbeta(pi, a, b, log = TRUE)
+  k <- log(1-pi)
+  log_lhood <- sum(data)*log(pi) + log(prod(data)*(-k))
+  return(exp(log_lhood + log_p))
+}
+
+```
+### Part 2.5
+```{r}
+# Use the integrate() function to calculate the denominator of Bayes Rule. You may need to look at the help page of the integrate() function to see what its arguments are. There were examples of using the integrate() function in the lecture slides.
+
+denominator <- integrate(f = kernel, lower = 0, upper = 1, data = x)$value
+denominator
+```
+
+### Part 2.6
+```{r}
+### Use the curve() function to plot the posterior PDF of ??| x. You may need to look at the help page of the curve() function to see what its arguments are. Hint: Use the xname = "pi" argument.
+curve(kernel(pi, data = x) / denominator, from = 0, to = 1, xname = "pi",
+      xlab = expression(pi),
+      ylab = "Density")
+
+```
+### Part 2.7
+```{r}
+# Numerically determine the posterior expectation of ??| x.
+ex <- function(pi, data) {
+  pi * kernel(pi, data = x) / denominator
+}
+
+#conditional mean
+integrate(f = ex, lower = 0, upper = 1, data = x)$value
+```
